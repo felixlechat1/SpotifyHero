@@ -1,3 +1,5 @@
+import com.android.tools.r8.internal.pl
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -52,4 +54,5 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation("com.google.code.gson:gson:2.8.9")
+    implementation (libs.android.gif.drawable)
 }

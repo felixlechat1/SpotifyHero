@@ -21,10 +21,14 @@ import java.util.TimerTask
 
 const val OBJECT_SLIDE_PERIOD_MS    = 500
 const val CONF_THRESH               = 0.7
-const val HALF_BEAT_MIN_MS          = 200.0
-const val BEAT_MIN_MS               = 500.0
+const val HALF_BEAT_MIN_MS          = 250.0
+const val BEAT_MIN_MS               = 600.0
+const val HALF_BEAT_MAX_MS          = 425.0
+const val BEAT_MAX_MS               = 800.0
+const val BEAT_MS                   = 750.0
+const val HALF_BEAT_MS              = 375.0
 const val TIMER_INIT_DELAY          = 0
-const val MAX_CLICK_DELAY_MS        = 200
+const val MAX_CLICK_DELAY_MS        = 100
 
 enum class EventType {
     DRUM1, DRUM2, CLAP
@@ -42,9 +46,9 @@ class HomeFragment : Fragment() {
     private lateinit var beatsArray : JSONArray
     private lateinit var segmentsArray : JSONArray
     private var time_ms = 0.0
-    private val timer_beats = Timer()
-    private val timer_segs = Timer()
-    private val timer_evnts = Timer()
+    private var timer_beats = Timer()
+    private var timer_segs = Timer()
+    private var timer_evnts = Timer()
     private var songPlaying = false
     private var isCurrClicked = false
     private var _binding: FragmentHomeBinding? = null
@@ -77,7 +81,7 @@ class HomeFragment : Fragment() {
             clickEvnt(EventType.CLAP)
         }
         // Init music player
-        music = MediaPlayer.create(this.context, R.raw.rockyou);
+//        music = MediaPlayer.create(this.context, R.raw.rockyou);
 
         // Read song data and initialize data structures
         val jsonString = ReadJSONFromAssets(this.context, "data.json")
@@ -101,7 +105,6 @@ class HomeFragment : Fragment() {
                 // Time for next beat?
                 if(time_ms >=nextBeat)
                 {
-                    println("Drum 1 : " + time_ms)
                     // Launch drum1 animation
                     animateDrum1()
                     currBeat = nextBeat
@@ -123,16 +126,19 @@ class HomeFragment : Fragment() {
                 // Time for next segment?
                 if(time_ms >= nextSeg)
                 {
-                    var timeAdjust = 0.0
+                    var minTimeAdjust = 0.0
+                    var maxTimeAdjust = 0.0
+                    var timeUnit = 0.0
                     var timeRef = 0.0
                     when(nextSegType){
                         EventType.DRUM2 ->
                         {
-                            println("Drum 2 : " + time_ms)
                             // Launch drum2 animation
                             animateDrum2()
                             // Parameters for finding next clap in segments array
-                            timeAdjust = BEAT_MIN_MS
+                            minTimeAdjust = BEAT_MIN_MS
+                            maxTimeAdjust = BEAT_MAX_MS
+                            timeUnit = BEAT_MS
                             timeRef = currBeat
                             nextSegType = EventType.CLAP
                             // Enqueue event
@@ -140,11 +146,12 @@ class HomeFragment : Fragment() {
                         }
                         EventType.CLAP ->
                         {
-                            println("Clap : " + time_ms)
                             // Launch clap animation
                             animateClap()
                             // Parameters for finding next drum in segments array
-                            timeAdjust = HALF_BEAT_MIN_MS
+                            minTimeAdjust = HALF_BEAT_MIN_MS
+                            maxTimeAdjust = HALF_BEAT_MAX_MS
+                            timeUnit = HALF_BEAT_MS
                             timeRef = nextBeat
                             nextSegType = EventType.DRUM2
                             // Enqueue event
@@ -159,7 +166,12 @@ class HomeFragment : Fragment() {
                     while(segIdx<segmentsArray.length())
                     {
                         val segment = segmentsArray.getJSONObject(segIdx++)
-                        if(segment.getDouble("confidence")>=CONF_THRESH && (segment.getDouble("start") * 1000 >= timeRef + timeAdjust))
+                        if(segment.getDouble("start") * 1000 > timeRef + maxTimeAdjust)
+                        {
+                            nextSeg = timeRef + timeUnit
+                            break
+                        }
+                        else if(segment.getDouble("confidence")>=CONF_THRESH && (segment.getDouble("start") * 1000 >= timeRef + minTimeAdjust))
                         {
                             // Save segment
                             nextSeg = segment.getDouble("start") * 1000
@@ -184,7 +196,7 @@ class HomeFragment : Fragment() {
                     if(time_ms - OBJECT_SLIDE_PERIOD_MS - MAX_CLICK_DELAY_MS > evnt.ts)
                     {
                         evntQueue.remove()
-                        binding.textHome.text = "PAS OK"
+                        binding.textHome.text = "Raté"
                     }
                 }
             }
@@ -250,9 +262,15 @@ class HomeFragment : Fragment() {
             timer_beats.cancel()
             timer_segs.cancel()
             timer_evnts.cancel()
+            timer_beats.purge()
+            timer_segs.purge()
+            timer_evnts.purge()
+            timer_beats = Timer()
+            timer_segs = Timer()
+            timer_evnts = Timer()
             songPlaying = false
             isCurrClicked = false
-            binding.start.text = "Start song"
+            binding.start.text = "Démarrer"
 
             beatIdx = 0
             segIdx = 0
@@ -260,18 +278,20 @@ class HomeFragment : Fragment() {
             nextSeg = 0.0
             currBeat = 0.0
             time_ms = 0.0
+            binding.progressBar.progress = 0
         }
         else
         {
             initEvents()
             // Start song
+            music = MediaPlayer.create(this.context, R.raw.rockyou);
             music.start()
-            songPlaying = true
             // Setup timers
             timer_beats.schedule(TimeTaskBeats(), TIMER_INIT_DELAY.toLong(), 10)
             timer_segs.schedule(TimeTaskSegments(), TIMER_INIT_DELAY.toLong(), 15)
             timer_evnts.schedule(TimeTaskEvnts(), TIMER_INIT_DELAY.toLong(), 20)
-            binding.start.text = "Stop song"
+            songPlaying = true
+            binding.start.text = "Arrêter"
         }
     }
     private fun clickEvnt(evntType: EventType) {
@@ -284,12 +304,12 @@ class HomeFragment : Fragment() {
                 val timestamp = time_ms - OBJECT_SLIDE_PERIOD_MS
                 if(timestamp<evnt.ts+MAX_CLICK_DELAY_MS && timestamp>evnt.ts-50)
                 {
-                    binding.textHome.text = "OK"
+                    binding.textHome.text = "Réussi"
                     evntQueue.remove()
                 }
                 else
                 {
-                    binding.textHome.text = "PAS OK"
+                    binding.textHome.text = "Raté"
                 }
             }
             else
